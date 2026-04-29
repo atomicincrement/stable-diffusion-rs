@@ -1,6 +1,6 @@
 //! CLIP text encoder for generating text embeddings
 
-use crate::types::{TensorBf16, CLIP_EMBEDDING_DIM, MAX_TOKEN_LENGTH};
+use crate::types::{TensorF32, CLIP_EMBEDDING_DIM, MAX_TOKEN_LENGTH};
 use ndarray::Array2;
 
 /// CLIP text encoder model
@@ -21,8 +21,8 @@ impl ClipEncoder {
     /// * `text` - Input text prompt
     /// 
     /// # Returns
-    /// Text embedding of shape (MAX_TOKEN_LENGTH, CLIP_EMBEDDING_DIM)
-    pub fn encode(&self, text: &str) -> Result<Array2<TensorBf16>, String> {
+    /// Text embedding of shape (MAX_TOKEN_LENGTH, CLIP_EMBEDDING_DIM) = (77, 768)
+    pub fn encode(&self, text: &str) -> Result<Array2<f32>, String> {
         // TODO: Tokenize text
         // TODO: Apply embedding layers
         // TODO: Apply positional encoding

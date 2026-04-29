@@ -31,7 +31,7 @@ impl DiffusionPipeline {
         noise: Array4<TensorBf16>,
         text_embedding: &ndarray::Array3<TensorBf16>,
         num_steps: usize,
-    ) -> Result<Array4<TensorBf16>, String> {
+    ) -> Result<Array4<f32>, String> {
         // TODO: Implement sampling loop
         // TODO: Iterate from t=1000 down to 0
         // TODO: Denoise using UNet

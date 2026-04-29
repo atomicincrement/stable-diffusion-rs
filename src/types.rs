@@ -1,19 +1,20 @@
 //! Type definitions and constants for Stable Diffusion inference
 
 use ndarray::{Array, ArrayView, IxDyn};
-use half::bf16;
 
 /// Weight matrix: reference to memory-mapped data (no copy needed)
 /// 
 /// Using ArrayView instead of owned Array allows zero-copy access to weights
 /// stored in memory-mapped files. The underlying data is owned by the Mmap.
-pub type WeightMatrix<'a> = ArrayView<'a, bf16, IxDyn>;
+/// Weights are stored as F32 in the safetensors files.
+pub type WeightMatrix<'a> = ArrayView<'a, f32, IxDyn>;
 
 /// Computation tensor: owned array for intermediate computations
 /// 
 /// Intermediate tensors during inference need to be owned since we modify them.
-/// Using BF16 for memory efficiency.
-pub type TensorBf16 = Array<bf16, IxDyn>;
+/// Using F32 to match the precision of weights (no conversion loss).
+/// Can be optimized to BF16 later for reduced memory usage.
+pub type TensorBf16 = Array<f32, IxDyn>;
 
 /// Single-precision tensors for fallback or precision-critical ops
 pub type TensorF32 = Array<f32, IxDyn>;
@@ -23,6 +24,18 @@ pub const CLIP_EMBEDDING_DIM: usize = 768;
 
 /// Maximum text token length for CLIP
 pub const MAX_TOKEN_LENGTH: usize = 77;
+
+/// Token embedding vocabulary size (CLIP uses 49408)
+pub const TOKEN_VOCAB_SIZE: usize = 49408;
+
+/// Number of transformer layers in CLIP
+pub const CLIP_NUM_LAYERS: usize = 12;
+
+/// Number of attention heads in CLIP
+pub const CLIP_NUM_HEADS: usize = 12;
+
+/// MLP expansion ratio in CLIP transformer
+pub const CLIP_MLP_EXPANSION: usize = 4;  // 768 → 3072 → 768
 
 /// Diffusion timestep count
 pub const DIFFUSION_STEPS: usize = 1000;

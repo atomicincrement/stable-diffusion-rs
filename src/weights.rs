@@ -1,11 +1,10 @@
 //! Weight loading and management for pretrained Stable Diffusion models
 //! 
 //! Uses memory-mapped files with ArrayView for zero-copy weight access.
-//! Weights are stored as references to mmap'd data, not owned arrays.
+//! Weights are stored as F32 references to mmap'd data, not owned arrays.
 
-use crate::types::{TensorBf16, WeightMatrix};
+use crate::types::{TensorF32, WeightMatrix};
 use ndarray::Array;
-use half::bf16;
 use std::path::Path;
 use futures_util::stream::StreamExt;
 
