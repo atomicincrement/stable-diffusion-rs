@@ -47,7 +47,7 @@ src/
 
 ---
 
-## Phase 2: Weight Fetching & Loading ⏳ IN PROGRESS
+## Phase 2: Weight Fetching & Loading ✓ COMPLETE
 
 ### 2.1 Fetch Pretrained Weights
 - [x] Infrastructure for downloading from Hugging Face Hub
@@ -74,20 +74,23 @@ src/
   - [x] Example code in examples/mmap_arrayview.rs
   - [x] Safety guarantees documented
 - [x] Structure: WeightStore struct created
-- [ ] Load actual weights and validate shapes
+- [x] Load actual weights and validate shapes
+  - [x] CLIP encoder: 197 tensors, 4 key tensors validated
+  - [x] UNet denoiser: 686 tensors, architecture verified
+  - [x] VAE decoder: 248 tensors, output projection verified
 
 ---
 
-## Phase 3: Text Encoder (CLIP) ⏸️ NOT STARTED
+## Phase 3: Text Encoder (CLIP) ⏳ IN PROGRESS
 
-### 3.1 CLIP Architecture Overview
-- Input: Tokenized text (max 77 tokens)
-- Output: 768-dim text embedding (conditioning vector)
-- Components:
-  - Token embedding layer
-  - Positional encoding
-  - Transformer encoder (12 layers)
-  - Final layer norm + projection
+### 3.1 CLIP Architecture Overview ✓ COMPLETE
+- ✓ Input: Tokenized text (max 77 tokens)
+- ✓ Output: 768-dim text embedding (conditioning vector)
+- ✓ Components identified and verified:
+  - Token embedding layer: [49408, 768]
+  - Positional encoding: [77, 768]
+  - Transformer encoder: 12 layers with multi-head attention
+  - Final layer norm + projection: [768]
 
 ### 3.2 Implementation (`clip.rs`)
 - Tokenizer: Use `tokenizers` crate to tokenize input text
