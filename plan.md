@@ -20,6 +20,7 @@ Create a Rust implementation of Stable Diffusion that demonstrates text-to-image
 - `image` - Output image generation (png/jpg)
 - `tokenizers` - Text tokenization for CLIP
 - `ndarray-stats` - Statistical operations
+- `half` - BF16 (bfloat16) support for reduced precision compute
 
 ### Create Module Structure
 ```
@@ -48,12 +49,16 @@ src/
 ### 2.2 Weight Decoding (`weights.rs`)
 - Parse weight files (safetensors format is preferred - easier to parse than PyTorch)
 - Deserialize into ndarray tensors
+- **Precision: Use BF16 (bfloat16) as default** for reduced memory and faster computation
+  - BF16 offers better numerical stability than FP16 for neural networks
+  - 50% memory savings compared to FP32
+  - Faster matrix operations on modern hardware
 - Structure: Create a `WeightStore` struct containing:
-  - CLIP text encoder weights
-  - Diffusion UNet weights
-  - VAE decoder weights
+  - CLIP text encoder weights (BF16)
+  - Diffusion UNet weights (BF16)
+  - VAE decoder weights (BF16)
 - Load into memory and validate shapes
-- Consider: How to handle different precision types (fp32, fp16)
+- Provide fallback to FP32 if needed for precision-critical operations
 
 ---
 
@@ -184,10 +189,13 @@ cargo run --release -- --prompt "a cat on a beach" --steps 50 --output out.png
 8. Print timing information
 
 ### 7.3 Performance Considerations
+- **Primary: Use BF16 precision** for all computations
+  - Balances speed, memory, and numerical stability
+  - Significantly faster inference than FP32 on supported hardware
 - Consider using seed for reproducibility
 - Reduce diffusion steps for faster inference (10-50 steps)
 - Use smaller model or distilled version if available
-- Consider quantization (fp16) for faster computation
+- CLI flag to switch between BF16 and FP32 if needed: `--precision bf16|fp32`
 
 ---
 
@@ -229,5 +237,51 @@ cargo run --release -- --prompt "a cat on a beach" --steps 50 --output out.png
 ### Code Organization
 - Keep layers and operations pure functions where possible
 - Create helper functions for common ops (matrix mul, activation, norm)
-- Use type aliases for clarity: `type Tensor = Array<f32, IxDyn>;`
+- Use type aliases for clarity: `type Tensor = Array<bf16, IxDyn>;` (or generic over precision)
 - Document expected tensor shapes in function signatures
+
+---
+
+## Stretch Goals
+
+### Goal 1: AVX-512-BF16 Optimization
+Optimize matrix operations to use Intel AVX-512 with native BF16 support:
+- **Why**: AVX-512-BF16 provides native hardware acceleration for bfloat16 operations
+- **Implementation**:
+  - Create `unsafe` SIMD blocks targeting `target_feature = "avx512bf16"`
+  - Implement hand-optimized matrix multiplication kernels
+  - Use `packed_simd` crate or inline assembly for AVX-512 operations
+  - Implement cache-friendly tile-based matrix multiplication
+- **Expected Benefit**: 5-10x speedup on capable hardware compared to generic ndarray ops
+- **Compatibility**: Add runtime CPU feature detection; fallback to generic ndarray on unsupported CPUs
+- **Testing**: Provide benchmark suite (`--bench`) comparing AVX-512 vs generic implementations
+
+### Goal 2: WebGPU Support
+Port compute-heavy operations to WebGPU for cross-platform GPU acceleration:
+- **Why**: WebGPU enables deployment on web and provides portable GPU compute
+- **Architecture**:
+  - Create optional `wgpu` backend module alongside ndarray
+  - Implement key kernels in WGSL (WebGPU Shading Language):
+    - Matrix multiplication (gemm)
+    - Softmax for attention
+    - Convolution operations
+    - Element-wise operations (GELU, layer norm)
+  - Maintain ndarray backend for CPU fallback
+- **Implementation Path**:
+  1. Start with most expensive ops: UNet forward pass and attention
+  2. Implement buffer management and GPU memory pooling
+  3. Create abstraction layer to swap between GPU/CPU backends
+  4. Use `wgpu` crate for WebGPU + Vulkan/Metal/DX12 support
+- **Expected Benefit**: 10-50x speedup on discrete GPUs
+- **Deployment**: Can be compiled to WebAssembly and run in browser
+- **Testing**: Verify GPU outputs match CPU results (account for precision differences)
+
+### Integration Strategy
+- Use feature flags in Cargo.toml:
+  ```toml
+  [features]
+  avx512-bf16 = []          # Enable AVX-512-BF16 optimizations
+  wgpu-backend = ["wgpu"]   # Enable WebGPU/GPU compute
+  ```
+- Compile with: `cargo build --release --features "avx512-bf16"` or `cargo build --target wasm32-unknown-unknown --features "wgpu-backend"`
+- Add benchmark: `cargo bench` to measure performance of different backends
