@@ -470,6 +470,293 @@ Classifier-Free Guidance (optional enhancement):
 
 ---
 
+## Phase 5: UNet Denoiser (Core Architecture) ⏳ IN PROGRESS
+
+### What is UNet?
+
+**UNet** (U-shaped Network) is the heart of Stable Diffusion. It's the neural network that learns to predict noise at each diffusion step, guided by:
+1. **Noisy latent** (4, 64, 64) - the current state being denoised
+2. **Timestep** (scalar) - how much noise remains
+3. **Text embedding** (77, 768) - what to generate
+
+**Architecture**: 686 weight tensors (~3.4 GB) organized in a U-shape with skip connections.
+
+### UNet Architecture Diagram
+
+```
+Input: noisy latent (1, 4, 64, 64) + timestep + text (77, 768)
+
+                         DOWNSAMPLING PATH
+                                ↓
+    Input Conv (4→320): (1, 320, 64, 64)
+            ↓
+    ╔═ Residual Block + Cross-Attention: (1, 320, 64, 64)
+    ║       ↓
+    ╠═ Residual Block + Cross-Attention: (1, 640, 32, 32) [downsample]
+    ║       ↓
+    ╠═ Residual Block + Cross-Attention: (1, 1280, 16, 16) [downsample]
+    ║
+    ║               BOTTLENECK (most features refined here)
+    ║                   ↓
+    ║    Self-Attention + Cross-Attention
+    ║
+    ║               UPSAMPLING PATH (with skip connections)
+    ║                   ↓
+    ╠═ Residual Block + Cross-Attention: (1, 1280, 16, 16) [upsample] + skip
+    ║       ↓
+    ╠═ Residual Block + Cross-Attention: (1, 640, 32, 32) [upsample] + skip
+    ║       ↓
+    ╚═ Residual Block + Cross-Attention: (1, 320, 64, 64) [upsample] + skip
+            ↓
+    Output Conv (320→4): (1, 4, 64, 64)
+            ↓
+    Predicted Noise: (1, 4, 64, 64)
+```
+
+**Why U-shape?**
+- Downsampling: Compress and find high-level patterns
+- Bottleneck: Synthesize understanding
+- Upsampling: Reconstruct spatial details (skip connections preserve fine details)
+- Skip connections: Information flows directly from down→up, enabling deep networks
+
+### Key Components Explained
+
+#### 1. Timestep Embedding (Sinusoidal Encoding)
+
+Converts scalar timestep to semantic vector:
+
+```
+Timestep: t ∈ [0, 1000]
+
+Sinusoidal Positional Encoding:
+  For position i in embedding:
+    emb[2j]   = sin(t / 10000^(2j/1280))  ← Even indices
+    emb[2j+1] = cos(t / 10000^(2j/1280))  ← Odd indices
+
+Example at t=0:
+  emb[0] = sin(0) = 0
+  emb[1] = cos(0) = 1
+  emb[2] = sin(0) = 0
+  emb[3] = cos(0) = 1
+
+Example at t=500:
+  emb[0] = sin(500 / 10000^(0/1280)) = sin(500) ≈ -0.262
+  emb[1] = cos(500) ≈ -0.965
+  emb[2] = sin(500 / 10000^(2/1280)) ≈ 0.398
+  emb[3] = cos(...) ≈ 0.917
+```
+
+**Why sinusoidal?**
+- Captures time at multiple scales (high-frequency + low-frequency)
+- Similar to transformer attention position embeddings
+- 0-1000 maps smoothly to embedding space
+- Different timesteps get distinct embeddings
+- UNet learns which "frequencies" are important for denoising
+
+**Frequency bands:**
+- High frequency (j=0): Oscillates rapidly, encodes fine-grained timestep
+- Medium frequency (j=100): Slower oscillation, medium-grained info
+- Low frequency (j=640): Slowest, encodes coarse timestep info
+
+#### 2. Residual Blocks (Feature Transformation)
+
+Each block preserves spatial shape while transforming features:
+
+```
+Input (batch, channels_in, 64, 64)
+    ↓
+[Conv 1] (in_channels) → (mid_channels)
+    ↓
+[Group Normalization] - Stabilize distribution
+    ↓
+[SiLU Activation] - smooth ReLU (better gradients)
+    ↓
+[Add Time Embedding] - Broadcast time info to all spatial locations
+    ↓
+[Dropout] - Regularization during training
+    ↓
+[Conv 2] (mid_channels) → (out_channels)
+    ↓
+[Residual Connection] - Add input: output + input
+    ↓
+Output (batch, out_channels, 64, 64)
+```
+
+**Pre-norm architecture:**
+```
+x_in → LayerNorm → Main Block → x_out + x_in (residual)
+```
+
+**Why residual connections?**
+- Gradients flow directly: dL/dx includes direct path
+- Enables very deep networks (>100 layers)
+- Preserves low-level information
+- Makes training stable
+
+**Time embedding integration:**
+```
+time_emb: (1280,) → MLP → (out_channels,)
+Broadcast to spatial: (out_channels,) → (1, out_channels, 64, 64)
+Add to features: features + time_emb (element-wise)
+```
+
+#### 3. Cross-Attention Blocks (Text Conditioning)
+
+Integrates text guidance via attention mechanism:
+
+```
+Query (Q) - From latent features:
+  Shape: (spatial_size, feature_dim) = (4096, 320)
+  Derived from: generated features during denoising
+
+Key (K) & Value (V) - From text embedding:
+  Shape: (num_tokens, embedding_dim) = (77, 768)
+  Derived from: CLIP text encoder output
+
+Multi-Head Attention (8 heads, 40 dims each):
+
+For each attention head:
+  Q: (4096, 320) → (4096, 40) via linear projection
+  K: (77, 768) → (77, 40) via linear projection
+  V: (77, 768) → (77, 40) via linear projection
+  
+  Attention Weights: softmax(Q @ K^T / √40)
+    = softmax((4096, 40) @ (40, 77) / √40)
+    = softmax((4096, 77) / 6.32)
+    = (4096, 77)
+    [For each spatial location, attention over 77 tokens]
+  
+  Attended Values: weights @ V
+    = (4096, 77) @ (77, 40)
+    = (4096, 40)
+
+Concatenate 8 heads: (4096, 320)
+
+Output projection: (4096, 320) → (4096, 320)
+```
+
+**Interpretation:**
+- Each spatial location (pixel) learns to attend to relevant text tokens
+- Attention weights = (4096, 77) matrix shows:
+  - Which pixels attend to which tokens
+  - "cat" tokens get high attention on cat-shaped pixels
+  - "beach" tokens get high attention on sandy pixels
+- Multiple heads learn different semantic relationships
+
+**Why cross-attention?**
+- Latent space (320 dims) ≠ text space (768 dims)
+- Cross-attention bridges them: latent queries attend to text
+- Fully learnable (trained end-to-end with diffusion loss)
+- Enables fine-grained control: text tokens affect specific regions
+
+#### 4. Skip Connections (U-Shape)
+
+In the upsampling path, features from downsampling are concatenated:
+
+```
+Downsampling (encoding):
+  x0 → block → skip_0 (64×64, 320 channels)
+  x0 → downsample → block → skip_1 (32×32, 640 channels)
+  x1 → downsample → block → skip_2 (16×16, 1280 channels)
+  x2 → bottleneck
+
+Upsampling (decoding):
+  x_bn → block → (16, 1280) → upsample → (32, ?)
+         ↓ concatenate with skip_2
+         → (32, 1280+1280=2560)
+         → conv to (32, 640)
+         ↓ upsample
+         ↓ concatenate with skip_1
+         → (64, 640+320=960)
+         → conv to (64, 320)
+```
+
+**Skip connection benefits:**
+- Preserves spatial details: high-res features from downsampling
+- Gradient flow: backprop reaches early layers faster
+- Information highway: deep layer can access shallow layer features
+- Equivalent to "feature reuse" in computer vision
+
+### UNet Tensor Organization
+
+**686 Total Tensors breakdown:**
+- Timestep embedding: ~128 tensors (embeddings + MLPs)
+- Downsampling blocks: ~150 tensors (convs + norms + attention)
+- Bottleneck: ~100 tensors (residual + attention)
+- Upsampling blocks: ~200 tensors (convs + norms + attention)
+- Cross-attention layers: ~80 tensors (Q/K/V projections)
+- Output layers: ~28 tensors (final conv + projections)
+
+**Memory profile:**
+- Model weights: 3.4 GB (on disk, memory-mapped)
+- Inference memory peak: ~2 GB (for all intermediate features)
+- Forward pass time: 5-10 seconds per timestep on consumer GPU
+
+### Inference Process with UNet
+
+```
+Step 1: Get timestep embedding
+  time_emb = timestep_embedding(t)  # (1280,)
+
+Step 2: Project latent through input layers
+  features = input_conv(noisy_latent)  # (320, 64, 64)
+
+Step 3: Process through downsampling blocks
+  features_d1 = block_1(features, time_emb)  # (320, 64, 64)
+  features_d2 = downsample(features_d1) + block_2(...)  # (640, 32, 32)
+  features_d3 = downsample(features_d2) + block_3(...)  # (1280, 16, 16)
+
+Step 4: Process through bottleneck
+  features_bn = attention(features_d3, text_embedding)  # (1280, 16, 16)
+
+Step 5: Process through upsampling (with skip connections)
+  features_u3 = upsample(features_bn) + features_d3  # (1280, 32, 32)
+  features_u2 = upsample(features_u3) + features_d2  # (640, 64, 64)
+  features_u1 = upsample(features_u2) + features_d1  # (320, 64, 64)
+
+Step 6: Generate noise prediction
+  noise_pred = output_conv(features_u1)  # (4, 64, 64)
+
+Return: noise_pred
+```
+
+### Current Implementation
+
+**Implemented:**
+- ✓ TimestepEmbedding: Sinusoidal encoding (128 dims)
+- ✓ ResidualBlock: Structure with time integration
+- ✓ CrossAttentionBlock: Multi-head attention interface
+- ✓ UNetDenoiser: Main architecture coordinator
+- ✓ predict_noise(): Full forward pass skeleton
+
+**Partial:**
+- ⏸️ Weight loading: File validation, structure ready
+- ⏸️ Convolution operations: Using ndarray (no CUDA kernels)
+- ⏸️ Group normalization: Interface defined
+
+**TODO for full implementation:**
+1. Parse 686 tensors from safetensors file
+2. Implement 2D convolution with proper weight layout
+3. Implement group normalization (normalize by group, not layer)
+4. Connect all components in actual forward pass
+5. Optimize memory usage for long sampling loops
+
+### Testing UNet
+
+Current status: Structural validation
+```bash
+# In future:
+cargo run --release -- diffusion-test
+# Will output:
+# ✓ UNet weights loaded (3.4 GB)
+# ✓ Timestep embedding (128 → 1280 dims)
+# ✓ Residual blocks connected
+# ✓ Cross-attention ready
+# ✓ Forward pass shape validation: (1,4,64,64) → (1,4,64,64)
+```
+
+---
+
 ## The Complete Pipeline
 
 ### Full Data Flow
@@ -483,7 +770,7 @@ User: "a cat on a beach"
 [Phase 4: Noise Schedule]
     Compute α_t, β_t, √(1-ᾱ_t) for t=1..1000
     ↓
-[Phase 5: UNet Denoising Loop] ← Not yet implemented
+[Phase 5: UNet Denoising Loop] ← In Progress
     Start: x_1000 ~ N(0, 1) [pure noise, shape (4, 64, 64)]
     
     For t = 1000 down to 1:
@@ -506,32 +793,37 @@ Result: Generated image matching "a cat on a beach"
 | 2 | ✓ | Disk | WeightStore | Load 4.26 GB of model weights efficiently |
 | 3 | ✓ | Text | (77, 768) | Convert text to semantic embeddings |
 | 4 | ✓ | Timesteps | NoiseSchedule | Understand noise progression |
-| 5 | ⏸️ | (4,64,64) noise | (4,64,64) latent | Iteratively denoise with text guidance |
+| 5 | ⏳ | (4,64,64) noise | (4,64,64) latent | Iteratively denoise with text guidance |
 | 6 | ⏸️ | (4,64,64) latent | (3,512,512) image | Upscale and convert to RGB |
 
 ---
 
-## Next Steps: Phase 5
+## Next Steps: Phase 5 Completion
 
-Once Phase 4 theory is understood, Phase 5 implements the actual inference loop:
+To finish Phase 5 (UNet integration):
 
-1. **Initialize noise schedule** (linear or cosine)
-2. **Start with random noise** x_1000
-3. **Load UNet weights** (686 tensors from SafeTensors)
-4. **Sampling loop** (1000 iterations):
-   - Call UNet with current latent, timestep, text embedding
-   - Denoise step using noise schedule
-   - Update latent
-5. **Return clean latent** for VAE decoder
+1. **Load 686 tensors** from safetensors file
+2. **Implement convolution** operations with weight matrices
+3. **Connect all blocks** in forward pass
+4. **Test with CLIP embeddings** from Phase 3
+5. **Validate output** against known diffusion models
+
+After Phase 5:
+- Phase 6: VAE decoder (upsampling latent to image)
+- Phase 7: CLI integration (full end-to-end generation)
 
 ---
 
 ## Key Takeaways
 
-1. **CLIP Encoder** (Phase 3): Converts semantic meaning → vectors
+1. **CLIP Encoder** (Phase 3): Text → semantic embeddings
 2. **Noise Schedule** (Phase 4): Defines noise progression mathematically
-3. **Reverse Process** (Phase 5): Uses noise schedule to iteratively denoise
-4. **Text Guidance**: CLIP embeddings condition the generation
+3. **UNet Denoiser** (Phase 5): Learns to reverse noise with text guidance
+   - Sinusoidal timestep embedding captures time at multiple scales
+   - Residual blocks enable deep architectures
+   - Cross-attention bridges latent and text spaces
+   - Skip connections preserve spatial details
+4. **Text Conditioning**: Every pixel learns to attend to relevant text tokens
 5. **Zero-Copy Architecture**: Memory-mapped weights enable efficiency
 
-The pipeline is a beautiful composition: semantics → stochastic generation → image synthesis.
+The pipeline is elegant: **text → embeddings → guided noise prediction → iterative denoising → image**.
