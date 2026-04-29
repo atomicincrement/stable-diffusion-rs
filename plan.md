@@ -84,13 +84,78 @@ src/
 ## Phase 3: Text Encoder (CLIP) ⏳ IN PROGRESS
 
 ### 3.1 CLIP Architecture Overview ✓ COMPLETE
-- ✓ Input: Tokenized text (max 77 tokens)
-- ✓ Output: 768-dim text embedding (conditioning vector)
-- ✓ Components identified and verified:
-  - Token embedding layer: [49408, 768]
-  - Positional encoding: [77, 768]
-  - Transformer encoder: 12 layers with multi-head attention
-  - Final layer norm + projection: [768]
+
+**Model Structure:**
+- **Total Parameters**: 123.06 Million (469.44 MB in F32)
+- **Precision**: F32 (float32 for weights, matching safetensors storage)
+- **Vocabulary Size**: 49,408 tokens
+- **Embedding Dimension**: 768
+- **Sequence Length**: 77 (max tokens)
+- **Transformer Layers**: 12 (indexed 0-11)
+- **Attention Heads**: 12 heads × 64 dims/head = 768
+- **MLP Expansion**: 4× (768 → 3072 → 768)
+
+**Architecture Layers:**
+1. **Input**: Text string or token IDs (1-77 tokens)
+   - Pad/truncate to exactly 77 tokens
+
+2. **Token Embedding** [49408, 768]
+   - Lookup layer: token_id → 768-dim vector
+   - Maps vocabulary to embedding space
+
+3. **Positional Embedding** [77, 768]
+   - Learned position embeddings for each position
+   - Added element-wise to token embeddings
+
+4. **Transformer Blocks** × 12 (layers 0-11)
+   Each block contains:
+   - **Layer Norm 1** [768]
+   - **Self-Attention** (multi-head)
+     - Query proj [768, 768]
+     - Key proj [768, 768]
+     - Value proj [768, 768]
+     - Output proj [768, 768]
+   - **Layer Norm 2** [768]
+   - **MLP Feed-Forward**
+     - Linear 1 (expand): [3072, 768]
+     - GELU activation
+     - Linear 2 (project): [768, 3072]
+
+5. **Final Layer Norm** [768]
+   - Normalizes output of last transformer block
+
+6. **Output**: (77, 768) text embedding
+   - 77 position embeddings × 768 dimensions
+   - Used as conditioning for diffusion model
+
+**Data Flow Example:**
+```
+Input text: "a beautiful sunset over the ocean"
+    ↓
+Tokenizer: "a" → 320, "beautiful" → 1283, ...
+    ↓
+Token IDs (77 tokens, padded): [320, 1283, ..., 0, 0, ..., 0]
+    ↓
+Token Embedding lookup: (77,) → (77, 768)
+    ↓
++ Position Embedding: (77, 768) + (77, 768) → (77, 768)
+    ↓
+Transformer Block × 12:
+    LayerNorm → MultiHeadAttention → Add & Norm → MLP → Add & Norm
+    (77, 768) → (77, 768) for each layer
+    ↓
+Final LayerNorm: (77, 768) → (77, 768)
+    ↓
+Output: Text conditioning (77, 768)
+    - Ready for use in diffusion model's cross-attention
+```
+
+**Key Implementation Checkpoints:**
+- ✓ Tensor shapes verified from actual weights
+- ✓ Attention mechanism: 12 heads, QKV projections
+- ✓ MLP structure: 4× expansion ratio
+- ✓ Normalization: Pre-norm architecture (norm before operations)
+- Ready to implement in Phase 3.2
 
 ### 3.2 Implementation (`clip.rs`)
 - Tokenizer: Use `tokenizers` crate to tokenize input text
