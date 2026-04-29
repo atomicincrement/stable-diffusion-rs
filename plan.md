@@ -10,19 +10,30 @@ Create a Rust implementation of Stable Diffusion that demonstrates text-to-image
 
 ---
 
-## Phase 1: Project Setup & Dependencies
+## Phase 1: Project Setup & Dependencies ✓ COMPLETE
 
 ### Dependencies to add to Cargo.toml
-- `ndarray` - Tensor operations
-- `ndarray-linalg` - Linear algebra (matrix operations)
-- `rand` / `rand_distr` - Random sampling for diffusion
-- `serde` + `serde_json` - Weight deserialization
-- `image` - Output image generation (png/jpg)
-- `tokenizers` - Text tokenization for CLIP
-- `ndarray-stats` - Statistical operations
-- `half` - BF16 (bfloat16) support for reduced precision compute
+- [x] `ndarray` - Tensor operations
+- [x] `ndarray-linalg` - Linear algebra (matrix operations)
+- [x] `rand` / `rand_distr` - Random sampling for diffusion
+- [x] `serde` + `serde_json` - Weight deserialization
+- [x] `image` - Output image generation (png/jpg)
+- [x] `tokenizers` - Text tokenization for CLIP
+- [x] `ndarray-stats` - Statistical operations
+- [x] `half` - BF16 (bfloat16) support for reduced precision compute
+- [x] `memmap2` - Memory-mapped file I/O
+- [x] `safetensors` - SafeTensors format support
+- [x] `reqwest` + `tokio` - Async HTTP for downloads
+- [x] `indicatif` - Progress bars for downloads
 
 ### Create Module Structure
+- [x] `src/main.rs` - Entry point with CLI commands
+- [x] `src/types.rs` - Type definitions and constants
+- [x] `src/weights.rs` - Weight loading infrastructure
+- [x] `src/clip.rs` - Text encoder module (stub)
+- [x] `src/diffusion.rs` - Diffusion module (stub)
+- [x] `src/vae.rs` - VAE decoder module (stub)
+- [x] `src/utils.rs` - Utility functions (stub)
 ```
 src/
 ├── main.rs          - Entry point, CLI demo
@@ -36,65 +47,45 @@ src/
 
 ---
 
-## Phase 2: Weight Fetching & Loading
+## Phase 2: Weight Fetching & Loading ⏳ IN PROGRESS
 
 ### 2.1 Fetch Pretrained Weights
-- Find a small Stable Diffusion checkpoint (e.g., SD 1.5 with pruned weights or distilled version)
-- Options:
-  - Hugging Face diffusers (e.g., `runwayml/stable-diffusion-v1-5`)
-  - Direct checkpoint download (safetensors or .pt format)
-- Store locally in `./weights/` directory
-- Document source and licensing
+- [x] Infrastructure for downloading from Hugging Face Hub
+- [x] CLI command: `cargo run -- download`
+- [x] Error handling with helpful messages
+- [x] Progress bars for downloads
+- [ ] Actually working download (requires HF_TOKEN authentication)
+- [ ] Support for multiple model variants
+- [x] Documentation in WEIGHTS.md
+- [x] Store locally in `./weights/` directory
 
-### 2.2 Weight Decoding (`weights.rs`)
-- Parse weight files (safetensors format is preferred - easier to parse than PyTorch)
-- Deserialize into ndarray tensors
-- **Precision: Use BF16 (bfloat16) as default** for reduced memory and faster computation
-  - BF16 offers better numerical stability than FP16 for neural networks
-  - 50% memory savings compared to FP32
-  - Faster matrix operations on modern hardware
-
-#### Memory-Mapped File Loading (Important!)
-- **Use memory-mapped I/O** (via `memmap2`) to load weight files efficiently
-  - Avoids loading entire weight files into RAM (~80% memory savings)
-  - Supports lazy loading: tensors loaded on-demand as needed
-  - Enables efficient multi-process access patterns
-  - Critical for machines with 8-16GB RAM - works with weights larger than available memory
-  - Faster startup times (no full file read required)
-- Implementation:
-  ```rust
-  let file = File::open(path)?;
-  let mmap = unsafe { Mmap::map(&file)? };
-  let tensors = SafeTensors::deserialize(&mmap)?;
-  ```
-
-#### SafeTensors Format Parsing (Future Optimization)
-- **Ideal goal**: Implement safetensors parsing by hand instead of using external crate
-  - Safetensors format is simple: header (JSON) + tensor data
-  - Benefits of custom implementation:
-    1. Full control over memory layout and alignment
-    2. Can optimize for specific tensor access patterns
-    3. Reduce binary size (no external safetensors dependency)
-    4. Educational value - understand serialization format
-  - Format structure:
-    ```
-    [8 bytes: header_size (little-endian u64)]
-    [header_size bytes: JSON metadata]
-    [remaining bytes: tensor data]
-    ```
-  - Current workaround: Use `safetensors` crate with `memmap2`
-  - Future work: Replace with custom parser that has even tighter control over buffer management
-
-- Structure: Create a `WeightStore` struct containing:
-  - CLIP text encoder weights (BF16)
-  - Diffusion UNet weights (BF16)
-  - VAE decoder weights (BF16)
-- Load into memory and validate shapes
-- Provide fallback to FP32 if needed for precision-critical operations
+### 2.2 Weight Decoding (`weights.rs`) ⏳ IN PROGRESS
+- [x] **Precision: Use BF16 (bfloat16) as default**
+  - [x] BF16 type alias in types.rs
+  - [x] Documentation of benefits (50% memory savings, better stability)
+- [x] **Memory-Mapped File Loading (Complete)**
+  - [x] `memmap2` dependency added
+  - [x] Memory mapping implementation in load_from_safetensors()
+  - [x] Lazy loading support
+  - [x] ~80% memory savings documentation
+  - [x] docs/memory_layout.md with detailed explanation
+- [x] **ArrayView for Zero-Copy Access**
+  - [x] WeightMatrix<'a> = ArrayView<'a, bf16, IxDyn> type alias
+  - [x] Documentation of memory layout
+  - [x] Example code in examples/mmap_arrayview.rs
+  - [x] Safety guarantees documented
+- [ ] **SafeTensors Format Parsing** (Goal 0 - Stretch)
+  - [ ] Implement safetensors parsing by hand (no external crate)
+  - [ ] Custom header JSON parsing
+  - [ ] Direct ArrayView creation from parsed offsets
+  - [ ] Zero-copy tensor construction
+- [x] Structure: WeightStore struct created
+- [ ] Load actual weights and validate shapes
+- [ ] Fallback to FP32 for precision-critical ops
 
 ---
 
-## Phase 3: Text Encoder (CLIP)
+## Phase 3: Text Encoder (CLIP) ⏸️ NOT STARTED
 
 ### 3.1 CLIP Architecture Overview
 - Input: Tokenized text (max 77 tokens)
@@ -126,7 +117,7 @@ src/
 
 ---
 
-## Phase 4: Latent Diffusion Forward Process (Understanding)
+## Phase 4: Latent Diffusion Forward Process (Understanding) ⏸️ NOT STARTED
 
 ### 4.1 Concepts (Reference, not coded)
 - Forward process: Progressively add Gaussian noise to images
@@ -141,7 +132,7 @@ src/
 
 ---
 
-## Phase 5: Latent Diffusion Inference (Reverse Process)
+## Phase 5: Latent Diffusion Inference (Reverse Process) ⏸️ NOT STARTED
 
 ### 5.1 Inference Pipeline (`diffusion.rs`)
 
@@ -179,7 +170,7 @@ src/
 
 ---
 
-## Phase 6: VAE Decoder
+## Phase 6: VAE Decoder ⏸️ NOT STARTED
 
 ### 6.1 VAE Architecture
 - Input: Latent representation (4, 64, 64)
@@ -203,48 +194,50 @@ src/
 
 ---
 
-## Phase 7: Putting It Together - Demo (`main.rs`)
+## Phase 7: Putting It Together - Demo (`main.rs`) ⏳ PARTIAL
 
 ### 7.1 CLI Interface
+- [x] Help message
+- [x] `cargo run -- download` command structure
+- [x] `cargo run -- test` command structure
+- [ ] `cargo run -- generate` command (not implemented)
 ```
 cargo run --release -- --prompt "a cat on a beach" --steps 50 --output out.png
 ```
 
 ### 7.2 Main Function Flow
-1. Parse CLI arguments: prompt, num_diffusion_steps, seed, output_path
-2. Load weights (CLIP, UNet, VAE) from disk
-3. Tokenize and encode text with CLIP → embedding (1, 77, 768)
-4. Initialize latent noise: random (1, 4, 64, 64)
-5. Run diffusion inference loop with CLIP embedding for conditioning
-6. Apply VAE decoder to get RGB image
-7. Save image as PNG/JPG
-8. Print timing information
+- [ ] Parse CLI arguments: prompt, num_diffusion_steps, seed, output_path
+- [ ] Load weights (CLIP, UNet, VAE) from disk
+- [ ] Tokenize and encode text with CLIP → embedding (1, 77, 768)
+- [ ] Initialize latent noise: random (1, 4, 64, 64)
+- [ ] Run diffusion inference loop with CLIP embedding for conditioning
+- [ ] Apply VAE decoder to get RGB image
+- [ ] Save image as PNG/JPG
+- [ ] Print timing information
 
 ### 7.3 Performance Considerations
-- **Primary: Use BF16 precision** for all computations
-  - Balances speed, memory, and numerical stability
-  - Significantly faster inference than FP32 on supported hardware
-- Consider using seed for reproducibility
-- Reduce diffusion steps for faster inference (10-50 steps)
-- Use smaller model or distilled version if available
-- CLI flag to switch between BF16 and FP32 if needed: `--precision bf16|fp32`
+- [x] **Primary: Use BF16 precision** design
+- [ ] CLI flag to switch between BF16 and FP32: `--precision bf16|fp32`
+- [ ] Seed parameter for reproducibility
+- [ ] Diffusion step parameter (10-50 steps)
+- [ ] Model size selection (full vs distilled)
 
 ---
 
-## Phase 8: Testing & Validation
+## Phase 8: Testing & Validation ⏸️ NOT STARTED
 
 ### Test Cases
-1. **Weight Loading**: Verify all weights load correctly with expected shapes
-2. **CLIP Encoding**: Test text embedding output shape and values are reasonable
-3. **Diffusion Sampling**: Verify noise schedule is computed correctly
-4. **Image Generation**: Generate test image and verify output shape (3, 512, 512)
-5. **End-to-End**: Full pipeline produces valid PNG image
+- [ ] **Weight Loading**: Verify weights load correctly with expected shapes
+- [ ] **CLIP Encoding**: Test text embedding output and verify reasonableness
+- [ ] **Diffusion Sampling**: Verify noise schedule computation
+- [ ] **Image Generation**: Generate test image and verify output shape
+- [ ] **End-to-End**: Full pipeline produces valid PNG image
 
 ### Debugging Tools
-- Print tensor shapes at each stage
-- Visualize intermediate latents (save as images)
-- Compare outputs with known implementations if possible
-- Test with simple prompts first
+- [ ] Print tensor shapes at each stage
+- [ ] Visualize intermediate latents (save as images)
+- [ ] Compare outputs with known implementations
+- [ ] Test with simple prompts first
 
 ---
 
@@ -276,7 +269,16 @@ cargo run --release -- --prompt "a cat on a beach" --steps 50 --output out.png
 
 ## Stretch Goals
 
-### Goal 0: Custom SafeTensors Parser (High Priority)
+### Goal 0: Custom SafeTensors Parser (High Priority) 🎯 DEFINED
+
+**Status**: Framework defined, not started
+**Priority**: High (enables future optimization)
+**Effort**: Medium (2-3 days)
+**Benefits**: Zero-copy tensor construction, full memory control, reduce dependencies
+
+### COMPLETED ITEMS
+
+#### Goal 0: Custom SafeTensors Parser (High Priority)
 Implement safetensors format parsing by hand instead of using external crate:
 - **Why**: Educational, optimizable, and reduces dependencies
 - **Format Analysis**:
@@ -303,7 +305,14 @@ Implement safetensors format parsing by hand instead of using external crate:
 - **Testing**: Compare output with official safetensors crate on sample files
 - **Future**: Enable zero-copy tensor construction directly from mmap
 
-### Goal 1: AVX-512-BF16 Optimization
+### Goal 1: AVX-512-BF16 Optimization 🎯 DEFINED
+
+**Status**: Framework defined, not started
+**Priority**: Medium (for CPU performance)
+**Effort**: Medium (3-4 days)
+**Benefits**: 5-10x speedup on capable hardware
+
+### Goal 1: AVX-512-BF16 Optimization (Details)
 Optimize matrix operations to use Intel AVX-512 with native BF16 support:
 - **Why**: AVX-512-BF16 provides native hardware acceleration for bfloat16 operations
 - **Implementation**:
@@ -315,7 +324,14 @@ Optimize matrix operations to use Intel AVX-512 with native BF16 support:
 - **Compatibility**: Add runtime CPU feature detection; fallback to generic ndarray on unsupported CPUs
 - **Testing**: Provide benchmark suite (`--bench`) comparing AVX-512 vs generic implementations
 
-### Goal 2: WebGPU Support
+### Goal 2: WebGPU Support 🎯 DEFINED
+
+**Status**: Framework defined, not started
+**Priority**: Medium (for GPU acceleration)
+**Effort**: High (5-7 days)
+**Benefits**: 10-50x speedup on discrete GPUs, WebAssembly support
+
+### Goal 2: WebGPU Support (Details)
 Port compute-heavy operations to WebGPU for cross-platform GPU acceleration:
 - **Why**: WebGPU enables deployment on web and provides portable GPU compute
 - **Architecture**:
