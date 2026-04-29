@@ -154,11 +154,13 @@ impl TransformerLayer {
     /// 
     /// # Arguments
     /// * `x` - Input tensor of shape (77, 768) representing:
-    ///   - First 12 blocks: embeddings from previous layer
+    ///   - Dimensions: (77 sequence positions, 768 embedding dimensions)
     ///   - First call (layer 0): token embeddings + positional embeddings
-    ///   - Example: (77 sequence positions, 768 embedding dimensions)
-    ///   - Each row is a token's embedding vector that will be processed
-    ///   - through attention and MLP, with output shape matching input
+    ///   - Subsequent calls: output from previous transformer layer
+    ///   - Each row is a token's embedding vector processed through attention and MLP
+    ///   - Note: 77 is the fixed maximum sequence length CLIP was trained with.
+    ///     All inputs are padded/truncated to exactly 77 tokens for consistent shape.
+    ///     This allows batching and efficient computation during training/inference.
     fn forward(&self, x: &Array2<f32>) -> Result<Array2<f32>, String> {
         // Self-attention branch
         let norm_x = layer_norm(x, &self.norm1_weight, &self.norm1_bias);
