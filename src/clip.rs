@@ -151,6 +151,14 @@ impl TransformerLayer {
 
     /// Forward pass through transformer block
     /// Pre-norm architecture: LayerNorm → Attention → Add & Norm → MLP → Add
+    /// 
+    /// # Arguments
+    /// * `x` - Input tensor of shape (77, 768) representing:
+    ///   - First 12 blocks: embeddings from previous layer
+    ///   - First call (layer 0): token embeddings + positional embeddings
+    ///   - Example: (77 sequence positions, 768 embedding dimensions)
+    ///   - Each row is a token's embedding vector that will be processed
+    ///   - through attention and MLP, with output shape matching input
     fn forward(&self, x: &Array2<f32>) -> Result<Array2<f32>, String> {
         // Self-attention branch
         let norm_x = layer_norm(x, &self.norm1_weight, &self.norm1_bias);
