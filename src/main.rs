@@ -17,6 +17,8 @@ async fn main() {
         test_weights().await;
     } else if args.len() > 1 && args[1] == "clip-test" {
         test_clip_encoder().await;
+    } else if args.len() > 1 && args[1] == "noise-test" {
+        test_noise_schedule();
     } else {
         print_help();
     }
@@ -26,9 +28,10 @@ fn print_help() {
     println!("Stable Diffusion Demo - Text to Image Generation");
     println!();
     println!("Usage:");
-    println!("  cargo run -- download     Download pretrained weights");
-    println!("  cargo run -- test         Test weight loading");
-    println!("  cargo run -- clip-test    Test CLIP text encoder");
+    println!("  cargo run -- download       Download pretrained weights");
+    println!("  cargo run -- test           Test weight loading");
+    println!("  cargo run -- clip-test      Test CLIP text encoder");
+    println!("  cargo run -- noise-test     Test noise schedule");
     println!();
     println!("Note: Make sure you have enough disk space (~4GB for SD 1.5)");
 }
@@ -122,4 +125,58 @@ async fn test_clip_encoder() {
             println!("2. Then: cargo run -- clip-test");
         }
     }
+}
+
+fn test_noise_schedule() {
+    println!("Testing Noise Schedules for Diffusion Process...");
+    println!();
+    
+    // Test linear schedule
+    println!("Linear Noise Schedule:");
+    println!("=====================");
+    let linear_schedule = diffusion::NoiseSchedule::linear(1000);
+    
+    let test_steps = vec![1, 10, 100, 500, 750, 999];
+    println!("Step   | β_t      | α_t      | ᾱ_t      | √(1-ᾱ_t)");
+    println!("-------|----------|----------|----------|----------");
+    
+    for t in &test_steps {
+        let beta = linear_schedule.betas[*t];
+        let alpha = linear_schedule.alphas[*t];
+        let alpha_bar = linear_schedule.alphas_cumprod[*t];
+        let sqrt_1_minus_bar = linear_schedule.sqrt_one_minus_alphas_cumprod[*t];
+        
+        println!("{:5}  | {:.6} | {:.6} | {:.6} | {:.6}",
+                 t, beta, alpha, alpha_bar, sqrt_1_minus_bar);
+    }
+    println!();
+    
+    // Test cosine schedule
+    println!("Cosine Noise Schedule (Better Quality):");
+    println!("======================================");
+    let cosine_schedule = diffusion::NoiseSchedule::cosine(1000);
+    
+    println!("Step   | β_t      | α_t      | ᾱ_t      | √(1-ᾱ_t)");
+    println!("-------|----------|----------|----------|----------");
+    
+    for t in &test_steps {
+        let beta = cosine_schedule.betas[*t];
+        let alpha = cosine_schedule.alphas[*t];
+        let alpha_bar = cosine_schedule.alphas_cumprod[*t];
+        let sqrt_1_minus_bar = cosine_schedule.sqrt_one_minus_alphas_cumprod[*t];
+        
+        println!("{:5}  | {:.6} | {:.6} | {:.6} | {:.6}",
+                 t, beta, alpha, alpha_bar, sqrt_1_minus_bar);
+    }
+    println!();
+    
+    // Explain the values
+    println!("Interpretation:");
+    println!("- β_t: Amount of noise added at step t");
+    println!("- α_t: Signal retention (1 - β_t)");
+    println!("- ᾱ_t: Cumulative product (how much original signal remains)");
+    println!("- √(1-ᾱ_t): Noise coefficient for reverse process");
+    println!();
+    println!("✓ Noise schedules computed successfully!");
+    println!("  Ready for Phase 5: UNet denoising inference");
 }
