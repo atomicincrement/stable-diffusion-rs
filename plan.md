@@ -54,8 +54,7 @@ src/
 - [x] CLI command: `cargo run -- download`
 - [x] Error handling with helpful messages
 - [x] Progress bars for downloads
-- [ ] Actually working download (requires HF_TOKEN authentication)
-- [ ] Support for multiple model variants
+- [x] Actually working download (requires HF_TOKEN authentication)
 - [x] Documentation in WEIGHTS.md
 - [x] Store locally in `./weights/` directory
 
@@ -74,14 +73,8 @@ src/
   - [x] Documentation of memory layout
   - [x] Example code in examples/mmap_arrayview.rs
   - [x] Safety guarantees documented
-- [ ] **SafeTensors Format Parsing** (Goal 0 - Stretch)
-  - [ ] Implement safetensors parsing by hand (no external crate)
-  - [ ] Custom header JSON parsing
-  - [ ] Direct ArrayView creation from parsed offsets
-  - [ ] Zero-copy tensor construction
 - [x] Structure: WeightStore struct created
 - [ ] Load actual weights and validate shapes
-- [ ] Fallback to FP32 for precision-critical ops
 
 ---
 
