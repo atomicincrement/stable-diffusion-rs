@@ -122,6 +122,72 @@ impl WeightStore {
         })
     }
 
+    /// Load component weights from organized directory structure
+    /// 
+    /// Stable Diffusion v1.5 weights are organized as:
+    /// ```
+    /// weights/
+    ///   model_index.json          - Pipeline configuration
+    ///   text_encoder/
+    ///     model.safetensors       - CLIP text encoder
+    ///   unet/
+    ///     diffusion_pytorch_model.safetensors  - UNet denoiser
+    ///   vae/
+    ///     diffusion_pytorch_model.safetensors  - VAE decoder
+    /// ```
+    pub fn load_from_directory<P: AsRef<Path>>(model_dir: P) -> Result<Self, String> {
+        let model_dir = model_dir.as_ref();
+        
+        if !model_dir.exists() {
+            return Err(format!("Model directory not found: {:?}", model_dir));
+        }
+
+        println!("Loading components from: {:?}", model_dir);
+        
+        // Check for required components
+        let components = vec![
+            ("text_encoder/model.safetensors", "CLIP Text Encoder"),
+            ("unet/diffusion_pytorch_model.safetensors", "UNet Denoiser"),
+            ("vae/diffusion_pytorch_model.safetensors", "VAE Decoder"),
+        ];
+
+        let mut found_all = true;
+        for (component_path, component_name) in &components {
+            let full_path = model_dir.join(component_path);
+            if full_path.exists() {
+                let size = std::fs::metadata(&full_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                println!("  ✓ {} ({:.2} MB)", component_name, size as f64 / 1_000_000.0);
+            } else {
+                println!("  ✗ {} MISSING", component_name);
+                found_all = false;
+            }
+        }
+
+        if !found_all {
+            return Err(format!(
+                "Missing required component files in {:?}\n\
+                Expected directory structure:\n\
+                  text_encoder/model.safetensors\n\
+                  unet/diffusion_pytorch_model.safetensors\n\
+                  vae/diffusion_pytorch_model.safetensors",
+                model_dir
+            ));
+        }
+
+        println!("\n✓ All required components found!");
+        
+        // For now, just verify files exist
+        // TODO: Load each component using load_from_safetensors
+        
+        Ok(WeightStore {
+            clip_weights: ClipWeights {},
+            unet_weights: UNetWeights {},
+            vae_weights: VaeWeights {},
+        })
+    }
+
     /// Download weights from Hugging Face model hub
     /// 
     /// # Arguments

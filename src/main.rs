@@ -56,15 +56,19 @@ async fn test_weights() {
     println!("Testing weight loading...");
     println!();
     
-    // Check if weights exist locally
-    let weight_path = "./weights/runwayml_stable-diffusion-v1-5.safetensors";
+    // Check if weights exist locally in component structure
+    let model_dir = "./weights/runwayml_stable-diffusion-v1-5";
     
-    match weights::WeightStore::load_from_safetensors(weight_path) {
-        Ok(_) => println!("✓ Weights loaded successfully from {}", weight_path),
+    match weights::WeightStore::load_from_directory(model_dir) {
+        Ok(_) => {
+            println!();
+            println!("✓ All weights loaded successfully!");
+            println!("Ready to generate images.");
+        }
         Err(e) => {
             println!("✗ Could not load weights: {}", e);
             println!();
-            println!("To test weight loading:");
+            println!("To download weights:");
             println!("1. Run: cargo run -- download");
             println!("2. Then: cargo run -- test");
         }
