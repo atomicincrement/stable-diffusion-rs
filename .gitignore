@@ -1,1 +1,12 @@
 /target
+/weights
+/weights-cache
+**/*.safetensors
+**/*.pt
+**/*.bin
+.cache/
+*.pth
+output/
+*.png
+*.jpg
+*.jpeg

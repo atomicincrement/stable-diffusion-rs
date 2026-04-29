@@ -16,6 +16,11 @@ ndarray-stats = "0.5"
 half = "2.4"
 rayon = "1.7"
 wgpu = { version = "0.19", optional = true }
+safetensors = "0.4"
+reqwest = { version = "0.11", features = ["stream"] }
+tokio = { version = "1", features = ["full"] }
+indicatif = "0.17"
+shellexpand = "3.0"
 
 [features]
 avx512-bf16 = []
