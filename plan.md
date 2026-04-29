@@ -53,6 +53,38 @@ src/
   - BF16 offers better numerical stability than FP16 for neural networks
   - 50% memory savings compared to FP32
   - Faster matrix operations on modern hardware
+
+#### Memory-Mapped File Loading (Important!)
+- **Use memory-mapped I/O** (via `memmap2`) to load weight files efficiently
+  - Avoids loading entire weight files into RAM (~80% memory savings)
+  - Supports lazy loading: tensors loaded on-demand as needed
+  - Enables efficient multi-process access patterns
+  - Critical for machines with 8-16GB RAM - works with weights larger than available memory
+  - Faster startup times (no full file read required)
+- Implementation:
+  ```rust
+  let file = File::open(path)?;
+  let mmap = unsafe { Mmap::map(&file)? };
+  let tensors = SafeTensors::deserialize(&mmap)?;
+  ```
+
+#### SafeTensors Format Parsing (Future Optimization)
+- **Ideal goal**: Implement safetensors parsing by hand instead of using external crate
+  - Safetensors format is simple: header (JSON) + tensor data
+  - Benefits of custom implementation:
+    1. Full control over memory layout and alignment
+    2. Can optimize for specific tensor access patterns
+    3. Reduce binary size (no external safetensors dependency)
+    4. Educational value - understand serialization format
+  - Format structure:
+    ```
+    [8 bytes: header_size (little-endian u64)]
+    [header_size bytes: JSON metadata]
+    [remaining bytes: tensor data]
+    ```
+  - Current workaround: Use `safetensors` crate with `memmap2`
+  - Future work: Replace with custom parser that has even tighter control over buffer management
+
 - Structure: Create a `WeightStore` struct containing:
   - CLIP text encoder weights (BF16)
   - Diffusion UNet weights (BF16)
@@ -243,6 +275,33 @@ cargo run --release -- --prompt "a cat on a beach" --steps 50 --output out.png
 ---
 
 ## Stretch Goals
+
+### Goal 0: Custom SafeTensors Parser (High Priority)
+Implement safetensors format parsing by hand instead of using external crate:
+- **Why**: Educational, optimizable, and reduces dependencies
+- **Format Analysis**:
+  - Header: 8 bytes (little-endian u64) containing header size
+  - Metadata: JSON describing tensor names, shapes, dtype, offsets
+  - Data: Raw tensor bytes in specified order
+  - Simple format makes hand-parsing feasible
+- **Implementation**:
+  ```rust
+  // Parse safetensors format
+  fn parse_safetensors(mmap: &[u8]) -> Result<HashMap<String, Tensor>> {
+      let header_size = u64::from_le_bytes(mmap[0..8].try_into()?);
+      let header_json = std::str::from_utf8(&mmap[8..8+header_size as usize])?;
+      let metadata: SafeTensorsHeader = serde_json::from_str(header_json)?;
+      // Map tensor data from mmap using offsets
+  }
+  ```
+- **Benefits**:
+  1. Full control over memory layout and tensor buffer management
+  2. Can optimize for specific access patterns (sequential vs random access)
+  3. Reduce dependencies and binary size
+  4. Better integration with ndarray (direct buffer wrapping without copies)
+  5. Safer: validate format at compile time
+- **Testing**: Compare output with official safetensors crate on sample files
+- **Future**: Enable zero-copy tensor construction directly from mmap
 
 ### Goal 1: AVX-512-BF16 Optimization
 Optimize matrix operations to use Intel AVX-512 with native BF16 support:
