@@ -202,18 +202,69 @@ Output: Text conditioning (77, 768)
 
 ---
 
-## Phase 4: Latent Diffusion Forward Process (Understanding) ⏸️ NOT STARTED
+## Phase 4: Latent Diffusion Forward Process (Understanding) ✓ COMPLETE
 
-### 4.1 Concepts (Reference, not coded)
-- Forward process: Progressively add Gaussian noise to images
-- Noise schedule: Beta values at each timestep (1000 steps typically)
-- Alpha cumulative product: Used to compute noise level at any step
-- Formula: `x_t = sqrt(alpha_cumprod_t) * x_0 + sqrt(1 - alpha_cumprod_t) * eps`
+### 4.1 Concepts ✓
 
-### 4.2 Why This Matters
-- Understanding the forward process helps understand reverse inference
-- Noise schedule determines denoising progression
-- Document: Linear vs cosine vs other schedules
+Created comprehensive guide: [UNDERSTANDING_DIFFUSION.md](UNDERSTANDING_DIFFUSION.md)
+
+**Forward Process Explained:**
+- Progressive noise addition: x_t = √(ᾱ_t) * x_0 + √(1 - ᾱ_t) * ε
+- 1000-step noise schedule from clean image to pure noise
+- Mathematical foundation for understanding reverse inference
+
+**Noise Schedules:**
+- Linear schedule: β_t = β_min + (β_max - β_min) * t / 1000
+  - Simple, used in DDPM paper
+  - β_min = 0.0001, β_max = 0.02
+- Cosine schedule: ᾱ_t = (cos(π * t / 2000))²
+  - Smoother transitions, better perceptual quality
+  - Used by Stable Diffusion
+
+**Key Variables:**
+- α_t: How much original signal to keep at step t
+- β_t: How much new noise to add at step t
+- ᾱ_t: Cumulative product of α values (α_1 * α_2 * ... * α_t)
+- σ_t²: Posterior variance for reverse sampling
+
+### 4.2 Why This Matters ✓
+
+Understanding forward diffusion enables understanding reverse inference:
+
+**Forward (Noising):**
+```
+x_0 (clean image) → add noise → x_1 → add noise → ... → x_1000 (pure noise)
+```
+
+**Reverse (Denoising):**
+```
+x_1000 (pure noise) → predict & remove noise → x_999 → ... → x_0 (clean image)
+UNet learns: "Given noisy image at step t, what noise was added?"
+```
+
+### 4.3 Complete Data Flow ✓
+
+**CLIP Embedding → Noise Schedule → Inference Pipeline:**
+1. User provides text prompt
+2. CLIP encoder converts to (77, 768) conditioning vector
+3. Noise schedule pre-computed for 1000 timesteps
+4. UNet uses both to iteratively denoise latent
+5. VAE decoder converts latent to RGB image
+
+**Mathematical Foundation for Phase 5:**
+- Denoising formula: x_{t-1} = (1/√α_t) * (x_t - (β_t/√(1-ᾱ_t)) * ε_pred) + σ_t * z
+- Classifier-free guidance: ε_guided = ε_uncond + scale * (ε_text - ε_uncond)
+- Text conditioning: UNet receives CLIP embedding at each step
+
+### 4.4 Documentation
+
+See [UNDERSTANDING_DIFFUSION.md](UNDERSTANDING_DIFFUSION.md) for:
+- Complete pipeline visualization
+- Multi-head attention mechanics
+- MLP feed-forward explanation
+- Noise schedule mathematics
+- Reverse process algorithm
+- Phase dependencies and data flow
 
 ---
 
