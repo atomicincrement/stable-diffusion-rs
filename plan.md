@@ -268,41 +268,87 @@ See [UNDERSTANDING_DIFFUSION.md](UNDERSTANDING_DIFFUSION.md) for:
 
 ---
 
-## Phase 5: Latent Diffusion Inference (Reverse Process) ⏸️ NOT STARTED
+## Phase 5: Latent Diffusion Inference (Reverse Process) ⏳ IN PROGRESS
 
-### 5.1 Inference Pipeline (`diffusion.rs`)
+### 5.1 Noise Schedule ✓ COMPLETE
 
-#### Components needed:
-1. **Noise Schedule**: Pre-compute alpha, beta, and alpha_cumprod for all 1000 timesteps
-2. **UNet Denoiser**: Takes (noisy_latent, timestep, text_embedding) → prediction
-3. **Sampling Loop**: Iteratively denoise using predictions
+**NoiseSchedule Struct Implemented:**
+- [x] Linear schedule: β from 0.0001 to 0.02 (DDPM paper)
+- [x] Cosine schedule: Smoother transitions (Stable Diffusion)
+- [x] Pre-computed for 1000 timesteps
+- [x] Arrays: betas, alphas, alphas_cumprod (ᾱ_t)
+- [x] Derived values: √(ᾱ_t), √(1 - ᾱ_t), posterior_variance (σ_t²)
 
-#### UNet Architecture
-- Input: Noisy latent (4, 64, 64) + timestep embedding + text conditioning
-- Output: Predicted noise (same shape as input)
-- Structure:
+**Formulas Implemented:**
+- α_t = 1 - β_t (signal retention)
+- ᾱ_t = ∏(α_i) for i=1..t (cumulative product)
+- σ_t² = (1 - ᾱ_{t-1}) / (1 - ᾱ_t) * β_t (posterior variance)
+
+**Test Command:**
+- `cargo run --release -- noise-test`
+- Displays schedules at key timesteps (1, 10, 100, 500, 750, 999)
+- Validates mathematical correctness
+
+**Example Output:**
+```
+Linear Schedule Step 500:  β=0.010060, α=0.989940, ᾱ=0.077797
+Cosine Schedule Step 500:  β=0.026632, α=0.973368, ᾱ=0.000056
+```
+
+### 5.2 UNet Denoiser ⏸️ NOT STARTED
+
+**UNetDenoiser Struct (Stub):**
+- [x] Structure defined with load_from_file() method
+- [x] predict_noise() signature established
+- [ ] Weight loading from 686 UNet tensors
+- [ ] Forward pass implementation
+- [ ] Timestep embedding integration
+- [ ] Cross-attention with text conditioning
+
+**UNet Architecture Reference:**
+- Input: Noisy latent (4, 64, 64) + timestep (scalar) + text embedding (77, 768)
+- Output: Predicted noise (4, 64, 64)
+- Components:
   - Timestep embedding: Sinusoidal encoding → MLP
-  - Multiple residual blocks
-  - Attention layers (spatial + cross-attention with text)
+  - Residual blocks with normalization
+  - Spatial and cross-attention layers
   - Skip connections
-  - Progressive upsampling
+  - Progressive feature processing
 
-#### Sampling Algorithm (DDPM/DDIM)
+### 5.3 Sampling Loop ✓ FRAMEWORK READY
+
+**DiffusionPipeline Implementation:**
+- [x] `new()`: Linear schedule variant
+- [x] `with_cosine_schedule()`: Better quality variant
+- [x] `sample()`: Main sampling algorithm
+  - Takes initial noise, text embedding, num_steps
+  - Iterates from t=1000 down to 0
+  - Calls UNet for noise prediction
+  - Applies denoise_step() formula
+- [x] `denoise_step()`: Denoising formula
+  - x_{t-1} = (1/√α_t) * (x_t - (β_t/√(1-ᾱ_t)) * ε_pred) + σ_t * z
+  - Adds stochastic noise for variety (optional)
+- [x] Gaussian noise generation for posterior variance
+
+**Algorithm (DDPM/DDIM):**
 ```
-1. Start with random noise x_T ~ N(0, 1)
+1. Start with x_1000 ~ N(0, 1)
 2. For t = 1000 down to 1:
-   a. Predict noise using UNet: pred_noise = UNet(x_t, t, text_embedding)
-   b. Compute denoised image: x_0_pred = (x_t - sqrt(1-alpha_cumprod) * pred_noise) / sqrt(alpha_cumprod)
-   c. Sample next step: x_{t-1} = sqrt(alpha_{t-1}) * x_0_pred + sqrt(1 - alpha_{t-1}) * z
-   d. If t > 1: add noise z ~ N(0, 1)
-3. Output: x_0 (denoised latent in latent space)
+   a. Predict noise: ε_pred = UNet(x_t, t, text_embedding)
+   b. Denoise: x_{t-1} = (1/√α_t) * (x_t - (β_t/√(1-ᾱ_t)) * ε_pred) + σ_t * z
+   c. If t > 1: Add noise z ~ N(0, posterior_variance[t])
+3. Output: x_0 (clean latent)
 ```
 
-### 5.2 Implementation Notes
-- Timestep embedding: Use sinusoidal positional encoding
-- Cross-attention: Attention over text embedding for conditioning
-- Attention implementation: Query, Key, Value projections + softmax
-- Use classifier-free guidance (optional enhancement): Run inference twice (with and without text) and blend
+### 5.4 Next Steps
+
+To complete Phase 5:
+1. **Load UNet weights** from safetensors file (686 tensors)
+2. **Implement UNet forward pass** with all components
+3. **Integrate timestep embedding** (sinusoidal + MLP)
+4. **Add cross-attention** for text conditioning
+5. **Test with CLIP embeddings** from Phase 3
+6. **Optional:** Implement classifier-free guidance
 
 ---
 
