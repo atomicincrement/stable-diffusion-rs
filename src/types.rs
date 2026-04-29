@@ -1,13 +1,22 @@
 //! Type definitions and constants for Stable Diffusion inference
 
-use ndarray::Array;
+use ndarray::{Array, ArrayView, IxDyn};
 use half::bf16;
 
-/// Default tensor precision: bfloat16 for efficiency and stability
-pub type TensorBf16 = Array<bf16, ndarray::IxDyn>;
+/// Weight matrix: reference to memory-mapped data (no copy needed)
+/// 
+/// Using ArrayView instead of owned Array allows zero-copy access to weights
+/// stored in memory-mapped files. The underlying data is owned by the Mmap.
+pub type WeightMatrix<'a> = ArrayView<'a, bf16, IxDyn>;
+
+/// Computation tensor: owned array for intermediate computations
+/// 
+/// Intermediate tensors during inference need to be owned since we modify them.
+/// Using BF16 for memory efficiency.
+pub type TensorBf16 = Array<bf16, IxDyn>;
 
 /// Single-precision tensors for fallback or precision-critical ops
-pub type TensorF32 = Array<f32, ndarray::IxDyn>;
+pub type TensorF32 = Array<f32, IxDyn>;
 
 /// CLIP text embedding dimension
 pub const CLIP_EMBEDDING_DIM: usize = 768;

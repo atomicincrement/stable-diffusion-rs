@@ -1,6 +1,9 @@
 //! Weight loading and management for pretrained Stable Diffusion models
+//! 
+//! Uses memory-mapped files with ArrayView for zero-copy weight access.
+//! Weights are stored as references to mmap'd data, not owned arrays.
 
-use crate::types::TensorBf16;
+use crate::types::{TensorBf16, WeightMatrix};
 use ndarray::Array;
 use half::bf16;
 use std::path::Path;
@@ -45,8 +48,37 @@ impl WeightStore {
     /// This avoids loading the entire file into memory by using memory-mapped I/O,
     /// which is much more efficient for large weight files (>1GB).
     /// 
+    /// Returns ArrayView references to weight matrices, not owned arrays.
+    /// This enables zero-copy access to weights - they're read directly from the
+    /// memory-mapped file as needed, without copying into separate memory.
+    /// 
     /// # Arguments
     /// * `path` - Path to the safetensors weight file
+    /// 
+    /// # Memory Layout
+    /// ```text
+    /// Memory Map
+    /// ┌─────────────────────────────────────┐
+    /// │ SafeTensors Header (JSON metadata)   │ ← Read once
+    /// ├─────────────────────────────────────┤
+    /// │ Weight Matrix 1 (mmap'd)             │ ← ArrayView points here
+    /// │ ├─ CLIP token embeddings             │
+    /// │ ├─ CLIP transformer weights          │
+    /// │ └─ CLIP output projection            │
+    /// ├─────────────────────────────────────┤
+    /// │ Weight Matrix 2 (mmap'd)             │ ← ArrayView points here
+    /// │ ├─ UNet conv layers                  │
+    /// │ ├─ UNet attention layers             │
+    /// │ └─ UNet upsampling                   │
+    /// ├─────────────────────────────────────┤
+    /// │ Weight Matrix 3 (mmap'd)             │ ← ArrayView points here
+    /// │ ├─ VAE decoder blocks                │
+    /// │ └─ VAE output projection             │
+    /// └─────────────────────────────────────┘
+    /// 
+    /// No copying: ArrayView references point directly into mmap'd memory.
+    /// Lazy loading: Only referenced data is paged in by OS.
+    /// ```
     pub fn load_from_safetensors<P: AsRef<Path>>(path: P) -> Result<Self, String> {
         let path = path.as_ref();
         
