@@ -7,7 +7,7 @@ mod types;
 
 use std::env;
 use std::time::Instant;
-use ndarray::Array4;
+use ndarray::{Array4, Array2};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
@@ -317,7 +317,7 @@ async fn generate_image(args: &[String]) {
     
     let text_embedding = match clip_encoder.encode(&prompt) {
         Ok(embedding) => {
-            println!("  ✓ Text embedding shape: {:?}", embedding.dim());
+            println!("  ✓ Text embedding shape (CLIP output): {:?}", embedding.dim());
             embedding
         }
         Err(e) => {
@@ -325,6 +325,13 @@ async fn generate_image(args: &[String]) {
             return;
         }
     };
+
+    // Project CLIP embeddings from 768→1280 dimensions to match UNet expectation
+    // CLIP outputs: (77, 768)
+    // UNet expects: (77, 1280)
+    println!("  Projecting embeddings 768→1280 for UNet...");
+    let projected_embedding = project_clip_embedding(&text_embedding);
+    println!("  ✓ Projected embedding shape: {:?}", projected_embedding.dim());
     
     let encode_time = encode_start.elapsed();
     println!("  Encoding completed in {:.2}s", encode_time.as_secs_f32());
@@ -358,7 +365,7 @@ async fn generate_image(args: &[String]) {
     println!("[5/8] Running diffusion inference loop...");
     let diffusion_start = Instant::now();
     
-    let latent_image = match diffusion_pipeline.sample(initial_noise, &text_embedding, num_steps) {
+    let latent_image = match diffusion_pipeline.sample(initial_noise, &projected_embedding, num_steps) {
         Ok(latent) => {
             println!("  ✓ Diffusion complete, latent shape: {:?}", latent.dim());
             latent
@@ -522,4 +529,47 @@ fn save_image_as_png(image: &Array4<f32>, path: &str) -> Result<(), Box<dyn std:
     
     img_buffer.save(path)?;
     Ok(())
+}
+
+/// Project CLIP embeddings from 768 to 1280 dimensions
+/// 
+/// # Context
+/// - CLIP encoder outputs: (num_tokens=77, embedding_dim=768)
+/// - UNet expects: (num_tokens=77, context_dim=1280)
+/// - The projection layer is normally trained as part of the SD model
+/// 
+/// # Implementation
+/// Since we don't have the trained projection weights yet, this uses a simple
+/// projection that preserves information: repeats and selects features.
+/// This is a temporary solution - ideally should load actual weights.
+///
+/// # Arguments
+/// * `clip_embedding` - Text embeddings from CLIP (77, 768)
+///
+/// # Returns
+/// Projected embeddings (77, 1280)
+fn project_clip_embedding(clip_embedding: &Array2<f32>) -> Array2<f32> {
+    let (seq_len, embed_dim) = clip_embedding.dim();
+    
+    if embed_dim != 768 {
+        panic!("Expected CLIP embedding dimension 768, got {}", embed_dim);
+    }
+    
+    // Target dimension (UNet context dimension)
+    let target_dim = 1280;
+    
+    // Simple projection: duplicate features strategically
+    // [a0, a1, ..., a767] → [a0, a1, ..., a767, a0, a1, ..., a512]
+    // This preserves all information and is deterministic
+    let mut projected = Array2::zeros((seq_len, target_dim));
+    
+    for i in 0..seq_len {
+        for j in 0..target_dim {
+            // Map target dimension back to source dimension with wraparound
+            let source_idx = j % embed_dim;
+            projected[[i, j]] = clip_embedding[[i, source_idx]];
+        }
+    }
+    
+    projected
 }

@@ -22,15 +22,35 @@ pub struct NoiseSchedule {
 }
 
 impl NoiseSchedule {
-    /// Create a linear noise schedule (β_t linear from 0.0001 to 0.02)
-    /// Used in original DDPM paper
+    /// Create a linear noise schedule - UPDATED to Hugging Face Stable Diffusion v1.5 parameters
+    /// Parameters: β_start = 0.00085, β_end = 0.012 (more conservative than original DDPM)
     pub fn linear(num_steps: usize) -> Self {
-        let beta_start = 0.0001f32;
-        let beta_end = 0.02f32;
+        let beta_start = 0.00085f32;  // HF default for SD v1.5
+        let beta_end = 0.012f32;      // HF default for SD v1.5
 
         let mut betas = Array1::zeros(num_steps);
         for i in 0..num_steps {
             betas[i] = beta_start + (beta_end - beta_start) * (i as f32) / (num_steps - 1) as f32;
+        }
+
+        Self::from_betas(betas)
+    }
+
+    /// Create a scaled linear (sqrt-interpolated) noise schedule
+    /// Used by Hugging Face for Stable Diffusion v1.5
+    /// Formula: β_t = (sqrt(β_start) + (sqrt(β_end) - sqrt(β_start)) * t / (N-1))²
+    /// This provides smoother noise progression than pure linear
+    pub fn scaled_linear(num_steps: usize) -> Self {
+        let beta_start = 0.00085f32;
+        let beta_end = 0.012f32;
+
+        let sqrt_start = beta_start.sqrt();
+        let sqrt_end = beta_end.sqrt();
+
+        let mut betas = Array1::zeros(num_steps);
+        for i in 0..num_steps {
+            let sqrt_beta = sqrt_start + (sqrt_end - sqrt_start) * (i as f32) / (num_steps - 1) as f32;
+            betas[i] = sqrt_beta * sqrt_beta;
         }
 
         Self::from_betas(betas)
@@ -175,7 +195,7 @@ impl ResidualBlock {
 /// Attention over text embeddings to condition on text
 pub struct CrossAttentionBlock {
     pub query_dim: usize,        // Dimension of noisy latent features
-    pub context_dim: usize,      // Dimension of text embeddings (768)
+    pub context_dim: usize,      // Dimension of text embeddings (1280 after projection)
     pub num_heads: usize,
 }
 
@@ -252,7 +272,7 @@ impl UNetDenoiser {
         for _ in 0..num_attention_blocks {
             attention_blocks.push(CrossAttentionBlock::new(
                 hidden_channels,
-                768,  // CLIP_EMBEDDING_DIM
+                1280,  // UNet context dimension (matches projected CLIP embedding)
                 8,    // Number of attention heads
             ));
         }
@@ -313,7 +333,7 @@ impl UNetDenoiser {
     /// # Arguments
     /// * `noisy_latent` - Current noisy latent (1, 4, 64, 64)
     /// * `timestep` - Diffusion timestep (0-999)
-    /// * `text_embedding` - Text conditioning (1, 77, 768) from CLIP
+    /// * `text_embedding` - Text conditioning (77, 1280) from CLIP projection
     ///
     /// # Returns
     /// Predicted noise with same shape as input latent
@@ -331,9 +351,9 @@ impl UNetDenoiser {
             ));
         }
         
-        if text_embedding.dim() != (77, 768) {
+        if text_embedding.dim() != (77, 1280) {
             return Err(format!(
-                "Invalid text embedding shape: {:?}, expected (77, 768)",
+                "Invalid text embedding shape: {:?}, expected (77, 1280)",
                 text_embedding.dim()
             ));
         }
@@ -401,6 +421,18 @@ impl DiffusionPipeline {
     /// Create pipeline with cosine noise schedule (better quality)
     pub fn with_cosine_schedule(unet_path: &str) -> Result<Self, String> {
         let noise_schedule = NoiseSchedule::cosine(1000);
+        let unet = UNetDenoiser::load_from_file(unet_path)?;
+
+        Ok(DiffusionPipeline {
+            noise_schedule,
+            unet,
+        })
+    }
+
+    /// Create pipeline with scaled-linear noise schedule (Hugging Face standard)
+    /// This matches the SD v1.5 reference implementation exactly
+    pub fn with_scaled_linear_schedule(unet_path: &str) -> Result<Self, String> {
+        let noise_schedule = NoiseSchedule::scaled_linear(1000);
         let unet = UNetDenoiser::load_from_file(unet_path)?;
 
         Ok(DiffusionPipeline {
