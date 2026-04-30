@@ -2714,6 +2714,7 @@ dependencies = [
  "ndarray-linalg",
  "ndarray-stats",
  "rand",
+ "rand_chacha",
  "rand_distr",
  "rayon",
  "reqwest",

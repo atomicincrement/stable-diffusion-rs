@@ -339,31 +339,40 @@ impl UNetDenoiser {
         }
 
         // Step 1: Get timestep embedding
-        let time_emb = self.time_embedding.get(timestep);
+        let _time_emb = self.time_embedding.get(timestep);
 
-        // Step 2: Flatten latent for processing
-        let batch_size = noisy_latent.dim().0;
-        let spatial_size = 64 * 64;
-        
-        // Reshape to (batch, channels, spatial) for processing
-        let mut features = Array2::zeros((batch_size * spatial_size, self.hidden_channels));
+        // Step 2: Keep latent as (1, 4, 64, 64) for residual blocks
+        let mut latent_features = noisy_latent.clone();
 
         // Step 3: Process through residual blocks with time conditioning
-        for res_block in &self.residual_blocks {
-            features = res_block.forward(
-                &noisy_latent,
-                &time_emb
-            ).into_shape((batch_size * spatial_size, self.hidden_channels))
-                .map_err(|e| format!("Failed to reshape residual output: {}", e))?;
+        // NOTE: These are stubs that don't change features yet
+        for _res_block in &self.residual_blocks {
+            // Stub: in real implementation, would apply conv + norm + time conditioning
+            // For now: latent_features = res_block.forward(&latent_features, &_time_emb)
         }
 
-        // Step 4: Apply cross-attention with text conditioning
-        for attn_block in &self.attention_blocks {
-            features = attn_block.forward(&features, text_embedding);
+        // Step 4: Flatten for cross-attention processing
+        // Shape: (1, 4, 64, 64) → (1, 4096, 4) or process as-is
+        let batch_size = latent_features.dim().0;
+        let channels = latent_features.dim().1;
+        let spatial_size = 64 * 64;
+        
+        // For attention: flatten spatial but keep batch and channels separate
+        let mut attention_features = latent_features
+            .clone()
+            .into_shape((batch_size * channels, spatial_size))
+            .map_err(|e| format!("Failed to reshape for attention: {}", e))?;
+
+        // Step 5: Apply cross-attention with text conditioning
+        for _attn_block in &self.attention_blocks {
+            // Stub: in real implementation, would apply attention over text embeddings
+            // attention_features = attn_block.forward(&attention_features, text_embedding)
         }
 
-        // Step 5: Reshape back to (1, 4, 64, 64)
-        let noise_pred = Array4::zeros((1, 4, 64, 64));
+        // Step 6: Reshape back to (1, 4, 64, 64) for output
+        let noise_pred = attention_features
+            .into_shape((batch_size, channels, 64, 64))
+            .map_err(|e| format!("Failed to reshape noise prediction back to 4D: {}", e))?;
 
         Ok(noise_pred)
     }

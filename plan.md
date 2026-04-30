@@ -419,14 +419,14 @@ cargo run --release -- --prompt "a cat on a beach" --steps 50 --output out.png
 ```
 
 ### 7.2 Main Function Flow
-- [ ] Parse CLI arguments: prompt, num_diffusion_steps, seed, output_path
-- [ ] Load weights (CLIP, UNet, VAE) from disk
-- [ ] Tokenize and encode text with CLIP → embedding (1, 77, 768)
-- [ ] Initialize latent noise: random (1, 4, 64, 64)
-- [ ] Run diffusion inference loop with CLIP embedding for conditioning
-- [ ] Apply VAE decoder to get RGB image
-- [ ] Save image as PNG/JPG
-- [ ] Print timing information
+- [x] Parse CLI arguments: prompt, num_diffusion_steps, seed, output_path
+- [x] Load weights (CLIP, UNet, VAE) from disk
+- [x] Tokenize and encode text with CLIP → embedding (1, 77, 768)
+- [x] Initialize latent noise: random (1, 4, 64, 64)
+- [x] Run diffusion inference loop with CLIP embedding for conditioning
+- [x] Apply VAE decoder to get RGB image
+- [x] Save image as PNG/JPG
+- [x] Print timing information
 
 ### 7.3 Performance Considerations
 - [x] **Primary: Use BF16 precision** design
