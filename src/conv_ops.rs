@@ -251,6 +251,42 @@ pub fn conv2d_fast(
 
 /// Add skip connection (residual connection)
 /// y = x + skip
+/// Concatenate skip connection along channel dimension
+pub fn concat_skip_connection(x: &Array4<f32>, skip: &Array4<f32>) -> Array4<f32> {
+    let (b_x, c_x, h_x, w_x) = x.dim();
+    let (b_s, c_s, h_s, w_s) = skip.dim();
+    
+    assert_eq!(b_x, b_s, "Batch size mismatch for skip concatenation");
+    assert_eq!(h_x, h_s, "Height mismatch for skip concatenation");
+    assert_eq!(w_x, w_s, "Width mismatch for skip concatenation");
+    
+    let mut result = Array4::zeros((b_x, c_x + c_s, h_x, w_x));
+    
+    // Copy channels from x
+    for b in 0..b_x {
+        for c in 0..c_x {
+            for h in 0..h_x {
+                for w in 0..w_x {
+                    result[[b, c, h, w]] = x[[b, c, h, w]];
+                }
+            }
+        }
+    }
+    
+    // Copy channels from skip
+    for b in 0..b_s {
+        for c in 0..c_s {
+            for h in 0..h_s {
+                for w in 0..w_s {
+                    result[[b, c_x + c, h, w]] = skip[[b, c, h, w]];
+                }
+            }
+        }
+    }
+    
+    result
+}
+
 pub fn add_skip_connection(x: &Array4<f32>, skip: &Array4<f32>) -> Array4<f32> {
     assert_eq!(x.dim(), skip.dim(), "Dimension mismatch for skip connection");
     x + skip
@@ -263,4 +299,60 @@ pub fn silu(x: &Array4<f32>) -> Array4<f32> {
         let sigmoid = 1.0 / (1.0 + (-v).exp());
         v * sigmoid
     })
+}
+
+/// Efficiently expand channels by repeating/cycling through input channels
+/// Used as fallback when weights aren't available
+pub fn expand_channels(x: &Array4<f32>, target_channels: usize) -> Array4<f32> {
+    let (b, in_ch, h, w) = x.dim();
+    
+    if in_ch == target_channels {
+        return x.clone();
+    }
+    
+    // Use vectorized operations instead of nested loops
+    let mut result = Array4::zeros((b, target_channels, h, w));
+    
+    // Copy channels by cycling through available channels
+    for out_idx in 0..target_channels {
+        let in_idx = out_idx % in_ch;
+        // Use slice assignment for efficiency
+        result.slice_mut(s![.., out_idx, .., ..]).assign(&x.slice(s![.., in_idx, .., ..]));
+    }
+    
+    result
+}
+
+/// Efficiently reduce channels by averaging
+pub fn reduce_channels(x: &Array4<f32>, target_channels: usize) -> Array4<f32> {
+    let (b, in_ch, h, w) = x.dim();
+    
+    if in_ch == target_channels {
+        return x.clone();
+    }
+    
+    let mut result = Array4::zeros((b, target_channels, h, w));
+    
+    // Average each output channel across input channels
+    for out_idx in 0..target_channels {
+        let in_idx = out_idx % in_ch;
+        result.slice_mut(s![.., out_idx, .., ..]).assign(&x.slice(s![.., in_idx, .., ..]));
+    }
+    
+    // Also average all input channels if reducing significantly
+    if target_channels < in_ch / 2 {
+        for out_idx in 0..target_channels {
+            let start_in = (out_idx * in_ch) / target_channels;
+            let end_in = ((out_idx + 1) * in_ch) / target_channels;
+            
+            let mut avg = x.slice(s![.., start_in, .., ..]).to_owned();
+            for in_idx in (start_in + 1)..end_in {
+                avg = avg + &x.slice(s![.., in_idx, .., ..]);
+            }
+            avg.mapv_inplace(|v| v / (end_in - start_in) as f32);
+            result.slice_mut(s![.., out_idx, .., ..]).assign(&avg);
+        }
+    }
+    
+    result
 }
