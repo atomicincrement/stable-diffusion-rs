@@ -4,6 +4,7 @@ mod diffusion;
 mod vae;
 mod utils;
 mod types;
+mod conv_ops;
 
 use std::env;
 use std::time::Instant;
